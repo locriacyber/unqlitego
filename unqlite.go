@@ -66,7 +66,7 @@ func (l *Library) Init() {
 	C.unqlite_lib_init()
 }
 
-// IsThreadSafe returns a boolean identifiying if the UnQlite library is
+// IsThreadSafe returns a boolean identifiying if the UnQLite library is
 // compiled Thread Safe.
 func (l *Library) IsThreadSafe() bool {
 	return C.unqlite_lib_is_threadsafe() == 1
@@ -82,7 +82,7 @@ func (l *Library) Signature() string {
 	return C.GoString(C.unqlite_lib_signature())
 }
 
-// Ident returns the UnQlite identification string.
+// Ident returns the UnQLite identification string.
 func (l *Library) Ident() string {
 	return C.GoString(C.unqlite_lib_ident())
 }
@@ -111,9 +111,12 @@ func (l *Library) Shutdown() error {
 	return err
 }
 
-// UnQLiteError is returned on both UnQlite native errors as well as UnQliteGo errors.
+// UnQLiteError is returned on both UnQLite native errors as well as UnQLite Go errors.
 // Native errors are within the range of '<= 0' (Equal and lesser then Zero) while the
-// errors from UnQliteGo are > 0 (Greater then Zero).
+// errors from UnQLite Go are > 0 (Greater then Zero).
+//
+// 	( UnQLiteError <= 0 ) Native Errors
+//	( UnQLiteError >  0 ) UnQLite Go Errors.
 type UnQLiteError int
 
 // Error returns the string representation of the UnQLiteError.
@@ -124,6 +127,10 @@ func (e UnQLiteError) Error() string {
 	}
 
 	return s
+}
+
+func (e UnQLiteError) String() string {
+	return e.Error()
 }
 
 var errString = map[UnQLiteError]string{
