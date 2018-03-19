@@ -26,7 +26,7 @@ func (vm VM) Free() {
 	C.free(unsafe.Pointer(vm.vm))
 }
 
-func (vm *VM) Unqlite_vm_extract_variable(variable_name string) *Unqlite_value {
+func (vm *VM) Unqlite_vm_extract_variable(variable_name string) *unQLiteValue {
 	/*This function must be used with extra causion since it might return
 	a variable from the type of *C.unqlite_value ,be sure to free this pointer
 	In case of no such variable of out-of-memory issue NULL is returned
@@ -42,7 +42,7 @@ func (vm *VM) Unqlite_vm_extract_variable(variable_name string) *Unqlite_value {
 	c_variable_name := C.CString(variable_name)
 	defer C.free(unsafe.Pointer(c_variable_name))
 	unqlite_value := C.unqlite_vm_extract_variable(vm.vm, c_variable_name)
-	return &Unqlite_value{unqlite_value}
+	return &unQLiteValue{unqlite_value}
 }
 
 func (vm *VM) VM_extract_output() string {
@@ -64,70 +64,96 @@ func (vm *VM) Extract_variable_as_int(variable_name string) (int, error) {
 	/*Extract a variable from the VM after if have been executed
 	If something went wrong return nil
 	*/
-	var unqlite_value *Unqlite_value
-	unqlite_value = vm.Unqlite_vm_extract_variable(variable_name)
-	if !unqlite_value_ok(unqlite_value) {
+	var uval *unQLiteValue
+	uval = vm.Unqlite_vm_extract_variable(variable_name)
+	// if !unqlite_value_ok(unqlite_value) {
+	// 	return 0, nil
+	// }
+	if uval.Nil() {
 		return 0, nil
 	}
 
-	res := int(C.unqlite_value_to_int(unqlite_value.unqlite_value))
-	return res, GlobaLError("OK")
+	res := int(C.unqlite_value_to_int(uval.v))
+
+	//return res, GlobaLError("OK")
+	return res, UnQLiteError(0)
 }
 
 func (vm *VM) Extract_variable_as_string(variable_name string) (string, error) {
 	/*Extract a variable from the VM after if have been executed
 	If something went wrong return nil
 	*/
-	var unqlite_value *Unqlite_value
-	unqlite_value = vm.Unqlite_vm_extract_variable(variable_name)
-	if !unqlite_value_ok(unqlite_value) {
+	var uval *unQLiteValue
+	uval = vm.Unqlite_vm_extract_variable(variable_name)
+	// if !unqlite_value_ok(unqlite_value) {
+	// 	return "", nil
+	// }
+	if uval.Nil() {
 		return "", nil
 	}
+
 	var plen C.int
-	c_res := C.extract_variable_as_string(unqlite_value.unqlite_value, &plen)
+	c_res := C.extract_variable_as_string(uval.v, &plen)
 	res := C.GoStringN(c_res, plen)
 
-	return res, GlobaLError("OK")
+	//return res, GlobaLError("OK")
+	return res, UnQLiteError(0)
 }
 
 func (vm *VM) Extract_variable_as_bool(variable_name string) (bool, error) {
 	/*Extract a variable from the VM after if have been executed
 	If something went wrong return nil
 	*/
-	var unqlite_value *Unqlite_value
-	unqlite_value = vm.Unqlite_vm_extract_variable(variable_name)
-	if !unqlite_value_ok(unqlite_value) {
+	var uval *unQLiteValue
+	uval = vm.Unqlite_vm_extract_variable(variable_name)
+	// if !unqlite_value_ok(unqlite_value) {
+	// 	return false, nil
+	// }
+	if uval.Nil() {
 		return false, nil
 	}
 
-	res := int(C.unqlite_value_to_bool(unqlite_value.unqlite_value))
-	return res != 0, GlobaLError("OK")
+	res := int(C.unqlite_value_to_bool(uval.v))
+	//return res != 0, GlobaLError("OK")
+	return res != 0, UnQLiteError(0)
 }
 
 func (vm *VM) Extract_variable_as_int64(variable_name string) (int64, error) {
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
+	/*
+		Extract a variable from the VM after if have been executed
+		If something went wrong return nil
 	*/
-	var unqlite_value *Unqlite_value
-	unqlite_value = vm.Unqlite_vm_extract_variable(variable_name)
-	if !unqlite_value_ok(unqlite_value) {
+	var uval *unQLiteValue
+	uval = vm.Unqlite_vm_extract_variable(variable_name)
+	// if !unqlite_value_ok(unqlite_value) {
+	// 	return 0, nil
+	// }
+	if uval.Nil() {
 		return 0, nil
 	}
 
-	res := int64(C.unqlite_value_to_int64(unqlite_value.unqlite_value))
-	return res, GlobaLError("OK")
+	res := int64(C.unqlite_value_to_int64(uval.v))
+
+	//return res, GlobaLError("OK")
+	return res, UnQLiteError(0)
 }
 
 func (vm *VM) Extract_variable_as_double(variable_name string) (float64, error) {
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
+	/*
+		Extract a variable from the VM after if have been executed
+		If something went wrong return nil
 	*/
-	var unqlite_value *Unqlite_value
-	unqlite_value = vm.Unqlite_vm_extract_variable(variable_name)
-	if !unqlite_value_ok(unqlite_value) {
+	var uval *unQLiteValue
+	uval = vm.Unqlite_vm_extract_variable(variable_name)
+	// if !unqlite_value_ok(unqlite_value) {
+	// 	return 0.0, nil
+	// }
+	if uval.Nil() {
 		return 0.0, nil
 	}
 
-	res := float64(C.unqlite_value_to_double(unqlite_value.unqlite_value))
-	return res, GlobaLError("OK")
+	res := float64(C.unqlite_value_to_double(uval.v))
+	//return res, GlobaLError("OK")
+
+	return res, UnQLiteError(0)
 }
