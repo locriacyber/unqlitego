@@ -3,6 +3,8 @@ package unqlitego
 /* TODO: implement
 
 // Database Engine Handle
+unqlite_kv_append_fmt
+
 int unqlite_config(unqlite *pDb,int nOp,...);
 
 // Key/Value (KV) Store Interfaces
