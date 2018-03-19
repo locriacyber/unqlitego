@@ -7,27 +7,127 @@ import "C"
 
 import (
 	"fmt"
+	"sync"
 )
 
-// UnQLiteError ... standard error for this module
+var (
+	lib *Library
+)
 
-type GlobaLError string
+// init will initialize the library.
+// This is to replace to previous implementation of init for the UnQLite library.
+// In order to be fully ThreadSafe the library itself requires a global Mutex.
+//
+// Calls to 'C.unqlite_lib_init()' are ThreadSafe and any subsequents call will result in NOOP.
+// Calls to 'C.unqlite_lib_shutdown()' are NOT ThreadSafe and require a library Mutex.
+// Any subsequent calls to 'C.unqlite_lib_shutdown()' will result in NOOP.
+// Calls to 'unqlite_lib_config' are not ThreadSafe and require a library Mutex.
+func init() {
+	lib = &Library{
+		mu:  new(sync.Mutex),
+		lck: new(sync.Mutex),
+	}
 
-func (s GlobaLError) Error() string {
-	return string(s)
+	if !lib.IsThreadSafe() {
+		panic("UnQLite was not compiled ThreadSafe, please include 'UNQLITE_ENABLE_THREADS' directive in compilation.")
+	}
 }
 
+// Library represents the UnQLite Library Control.
+type Library struct {
+	// ThreadSafe Mutex
+	mu *sync.Mutex
+
+	// Library Lock
+	lck *sync.Mutex
+}
+
+// Info returns the UnQLite Library.
+func Info() *Library {
+	return lib
+}
+
+// Init will initialize the library. After call init, the library must be shutdown first before any
+// re-configuration can be done. Subsequent calls result in NOOP.
+// This is autocalled when a database is opened.
+func (l *Library) Init() {
+	// Initalize ThreadSafe Library Init.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Initalize Library Lock
+	// This lock will remain until Shutdown() is called.
+	// Library lock is required for calls to C.unqlite_lib_config.
+	// C.unqlite_lib_config is not ThreadSafe and is only allowed to be called
+	// when no call has yet been made to C.unqlite_lib_init().
+	// Therefor set global library lock, and release on call to Shutdown().
+	defer l.lck.Lock()
+
+	C.unqlite_lib_init()
+}
+
+// IsThreadSafe returns a boolean identifiying if the UnQlite library is
+// compiled Thread Safe.
+func (l *Library) IsThreadSafe() bool {
+	return C.unqlite_lib_is_threadsafe() == 1
+}
+
+// Version returns the version string.
+func (l *Library) Version() string {
+	return C.GoString(C.unqlite_lib_version())
+}
+
+// Signature returns the Signature string.
+func (l *Library) Signature() string {
+	return C.GoString(C.unqlite_lib_signature())
+}
+
+// Ident returns the UnQlite identification string.
+func (l *Library) Ident() string {
+	return C.GoString(C.unqlite_lib_ident())
+}
+
+// Copyright returns the Copyright string.
+func (l *Library) Copyright() string {
+	return C.GoString(C.unqlite_lib_copyright())
+}
+
+// Shutdown the UnQLite Library.
+func (l *Library) Shutdown() error {
+	var err error
+
+	// Enforce ThreadSafe operation.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Release Library lock
+	defer l.lck.Unlock()
+
+	res := C.unqlite_lib_shutdown()
+	if res != C.UNQLITE_OK {
+		err = UnQLiteError(res)
+	}
+
+	return err
+}
+
+// UnQLiteError is returned on both UnQlite native errors as well as UnQliteGo errors.
+// Native errors are within the range of '<= 0' (Equal and lesser then Zero) while the
+// errors from UnQliteGo are > 0 (Greater then Zero).
 type UnQLiteError int
 
+// Error returns the string representation of the UnQLiteError.
 func (e UnQLiteError) Error() string {
 	s := errString[e]
 	if s == "" {
-		return fmt.Sprintf("errno %d", int(e))
+		return fmt.Sprintf("err: %d", int(e))
 	}
+
 	return s
 }
 
 var errString = map[UnQLiteError]string{
+	C.UNQLITE_OK:             "OK",
 	C.UNQLITE_LOCKERR:        "Locking protocol error",
 	C.UNQLITE_READ_ONLY:      "Read only Key/Value storage engine",
 	C.UNQLITE_CANTOPEN:       "Unable to open the database file",
@@ -53,53 +153,19 @@ var errString = map[UnQLiteError]string{
 	C.UNQLITE_NOMEM:          "Out of memory",
 }
 
-type Unqlite_value struct {
-	unqlite_value *C.unqlite_value
+// unQLiteValue represents an UnQLite Value object which is returned from the unlying UnQLite Database.
+type unQLiteValue struct {
+	// Pointer to underlying UnQLite Value.
+	v *C.unqlite_value
 }
 
-func init() {
-	C.unqlite_lib_init()
-	if !IsThreadSafe() {
-		panic("unqlite library was not compiled for thread-safe option UNQLITE_ENABLE_THREADS=1")
-	}
-}
-
-func unqlite_value_ok(unqlite_value *Unqlite_value) bool {
-	switch unqlite_value.unqlite_value {
+// Nil returns a boolean indicating if the unQLiteValue is nil.
+func (uv *unQLiteValue) Nil() bool {
+	switch uv.v {
 	case nil:
-		return false //User Data is wrong
-	default:
+		// User Data is wrong
 		return true
+	default:
+		return false
 	}
 }
-
-// Shutdown the UnQlite Library.
-func Shutdown() (err error) {
-	res := C.unqlite_lib_shutdown()
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-/* TODO: implement
-
-// Database Engine Handle
-int unqlite_config(unqlite *pDb,int nOp,...);
-
-// Key/Value (KV) Store Interfaces
-int unqlite_kv_fetch_callback(unqlite *pDb,const void *pKey,
-	                    int nKeyLen,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-int unqlite_kv_config(unqlite *pDb,int iOp,...);
-
-//  Cursor Iterator Interfaces
-int unqlite_kv_cursor_key_callback(unqlite_kv_cursor *pCursor,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-int unqlite_kv_cursor_data_callback(unqlite_kv_cursor *pCursor,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-
-// Utility interfaces
-int unqlite_util_load_mmaped_file(const char *zFile,void **ppMap,unqlite_int64 *pFileSize);
-int unqlite_util_release_mmaped_file(void *pMap,unqlite_int64 iFileSize);
-
-// Global Library Management Interfaces
-int unqlite_lib_config(int nConfigOp,...);
-*/

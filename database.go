@@ -17,6 +17,7 @@ type Database struct {
 
 // NewDatabase ...
 func NewDatabase(filename string) (db *Database, err error) {
+	// TODO: Enforce call to check library lock and call forced call to init.
 	db = &Database{}
 	name := C.CString(filename)
 	defer C.free(unsafe.Pointer(name))
