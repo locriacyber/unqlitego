@@ -10,15 +10,15 @@ import (
 	"unsafe"
 )
 
-// Cursor represents an UnQlite database cursor.
+// Cursor represents an UnQLite database cursor.
 type Cursor struct {
 	parent *Database
 	handle *C.unqlite_kv_cursor
 }
 
-// NewCursor creates and initializes a new UnQlite database cursor.
-func (db *Database) NewCursor() (cursor *Cursor, err error) {
-	cursor = &Cursor{parent: db}
+// Cursor creates and initializes a new UnQLite database cursor.
+func (db *Database) Cursor() (*Cursor, error) {
+	c := &Cursor{parent: db}
 	res := C.unqlite_kv_cursor_init(db.handle, &cursor.handle)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
