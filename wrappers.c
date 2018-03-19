@@ -3,7 +3,7 @@ The wrappers are binding code for cases where cgo can not
 execute or call functions directly
 */
 
-#include "./unqlite.h"
+#include <unqlite.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +22,7 @@ char * extract_unqlite_log_error(unqlite *pDb) {
     char *buffer;
 
     //Extract the errror if exists
-    unqlite_config(pDb,UNQLITE_CONFIG_JX9_ERR_LOG, &buffer, &length);
+    unqlite_config(pDb, UNQLITE_CONFIG_JX9_ERR_LOG, &buffer, &length);
     
     return buffer;
 }
@@ -32,7 +32,7 @@ char * extract_vm_output(unqlite_vm *pvm, int *length) {
     char *t;
 
     //Extract the VM output
-    unqlite_vm_config(pvm,UNQLITE_VM_CONFIG_EXTRACT_OUTPUT, &buffer, length);
+    unqlite_vm_config(pvm, UNQLITE_VM_CONFIG_EXTRACT_OUTPUT, &buffer, length);
     t = (char *)malloc(*length + 1);
     memcpy(t, (const char*)buffer, *length);
 
