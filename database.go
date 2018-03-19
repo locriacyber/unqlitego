@@ -10,55 +10,72 @@ import (
 	"unsafe"
 )
 
-// Database ...
+// Database represents a UnQLite Database.
 type Database struct {
-	handle *C.unqlite
+	conn *C.unqlite
 }
 
-// NewDatabase ...
+// NewDatabase creates and initalizes a new UnQLite database connection.
 func NewDatabase(filename string) (db *Database, err error) {
 	// TODO: Enforce call to check library lock and call forced call to init.
 	db = &Database{}
+
 	name := C.CString(filename)
 	defer C.free(unsafe.Pointer(name))
-	res := C.unqlite_open(&db.handle, name, C.UNQLITE_OPEN_CREATE)
+
+	// Call Library Init
+	// This will lock the library against modifications.
+	Info().Init()
+
+	res := C.unqlite_open(&db.conn, name, C.UNQLITE_OPEN_CREATE)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
-	if db.handle != nil {
+	if db.conn != nil {
 		runtime.SetFinalizer(db, (*Database).Close)
 	}
+
 	return
 }
 
-func (db *Database) Unqlite_compile(jx9_script string, vm *VM) (error, string) {
-	res := C.unqlite_compile(db.handle, C.CString(jx9_script), C.int(len(jx9_script)), &vm.vm)
+// Compile a JX9 Script into a Virtual Machine.
+func (db *Database) Compile(jx9 string, vm *VM) (string, error) {
+
+	res := C.unqlite_compile(db.conn, C.CString(jx9), C.int(len(jx9)), &vm.vm)
 	if res != C.UNQLITE_OK {
 		if res == C.UNQLITE_COMPILE_ERR {
 			err := UnQLiteError(res)
-			error_log := new(C.char)
-			err_msg := C.extract_unqlite_log_error(db.handle, error_log)
-			g_err_msg := C.GoString(err_msg)
-			//C.free(unsafe.Pointer(err_msg))
-			return err, g_err_msg
+
+			// Error Log
+			elog := new(C.char)
+
+			// Error Message
+			emsg := C.extract_unqlite_log_error(db.conn, elog)
+
+			// Global Error Message
+			gmsg := C.GoString(emsg)
+
+			return gmsg, err
 		}
 	}
-	return nil, ""
+
+	return "", nil
 }
 
-// Close ...
+// Close will close the database connection.
 func (db *Database) Close() (err error) {
-	if db.handle != nil {
-		res := C.unqlite_close(db.handle)
+	if db.conn != nil {
+		res := C.unqlite_close(db.conn)
 		if res != C.UNQLITE_OK {
 			err = UnQLiteError(res)
 		}
-		db.handle = nil
+		db.conn = nil
 	}
+
 	return
 }
 
-// Store ...
+// Store will store a new Key/Value pair in the database.
 func (db *Database) Store(key, value []byte) (err error) {
 	var k, v unsafe.Pointer
 
@@ -70,16 +87,19 @@ func (db *Database) Store(key, value []byte) (err error) {
 		v = unsafe.Pointer(&value[0])
 	}
 
-	res := C.unqlite_kv_store(db.handle,
+	res := C.unqlite_kv_store(db.conn,
 		k, C.int(len(key)),
 		v, C.unqlite_int64(len(value)))
 	if res == C.UNQLITE_OK {
 		return nil
 	}
+
 	return UnQLiteError(res)
 }
 
-// Append ...
+// Append will write a new record into the database.
+// If the record does not exists it will be created, else the new
+// data is appended to the end of the old data.
 func (db *Database) Append(key, value []byte) (err error) {
 	var k, v unsafe.Pointer
 
@@ -91,16 +111,17 @@ func (db *Database) Append(key, value []byte) (err error) {
 		v = unsafe.Pointer(&value[0])
 	}
 
-	res := C.unqlite_kv_append(db.handle,
+	res := C.unqlite_kv_append(db.conn,
 		k, C.int(len(key)),
 		v, C.unqlite_int64(len(value)))
+
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
 	return
 }
 
-// Fetch ...
+// Fetch a record from the database.
 func (db *Database) Fetch(key []byte) (value []byte, err error) {
 	var k unsafe.Pointer
 
@@ -109,20 +130,22 @@ func (db *Database) Fetch(key []byte) (value []byte, err error) {
 	}
 
 	var n C.unqlite_int64
-	res := C.unqlite_kv_fetch(db.handle, k, C.int(len(key)), nil, &n)
+	res := C.unqlite_kv_fetch(db.conn, k, C.int(len(key)), nil, &n)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 		return
 	}
+
 	value = make([]byte, int(n))
-	res = C.unqlite_kv_fetch(db.handle, k, C.int(len(key)), unsafe.Pointer(&value[0]), &n)
+	res = C.unqlite_kv_fetch(db.conn, k, C.int(len(key)), unsafe.Pointer(&value[0]), &n)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
+
 	return
 }
 
-// Delete ...
+// Delete a record from the database.
 func (db *Database) Delete(key []byte) (err error) {
 	var k unsafe.Pointer
 
@@ -130,36 +153,40 @@ func (db *Database) Delete(key []byte) (err error) {
 		k = unsafe.Pointer(&key[0])
 	}
 
-	res := C.unqlite_kv_delete(db.handle, k, C.int(len(key)))
+	res := C.unqlite_kv_delete(db.conn, k, C.int(len(key)))
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
+
 	return
 }
 
-// Begin ...
+// Begin will start a transaction.
 func (db *Database) Begin() (err error) {
-	res := C.unqlite_begin(db.handle)
+	res := C.unqlite_begin(db.conn)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
+
 	return
 }
 
-// Commit ...
+// Commit will commit a transaction to the database.
 func (db *Database) Commit() (err error) {
-	res := C.unqlite_commit(db.handle)
+	res := C.unqlite_commit(db.conn)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
+
 	return
 }
 
-// Rollback ...
+// Rollback a transaction.
 func (db *Database) Rollback() (err error) {
-	res := C.unqlite_rollback(db.handle)
+	res := C.unqlite_rollback(db.conn)
 	if res != C.UNQLITE_OK {
 		err = UnQLiteError(res)
 	}
+
 	return
 }
