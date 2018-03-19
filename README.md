@@ -1,4 +1,4 @@
-unqlitego
+unqlitego [![Build Status](https://travis-ci.org/GJRTimmer/unqlitego.svg?branch=master)](https://travis-ci.org/GJRTimmer/unqlitego)
 =========
 
 UnQLite Binding for golang.
@@ -7,14 +7,24 @@ Install
 ---------
 
 ```sh
-$ go get github.com/nobonobo/unqlitego
+$ go get github.com/GJRTimmer/unqlitego
+```
+
+Dependencies
+------------
+
+Dependencies are management by [Golang Dep](https://github.com/golang/dep/cmd/dep)
+
+```sh
+$ go get github.com/golang/dep/cmd/dep
+$ dep ensure
 ```
 
 Test
 ---------
+
 ```sh
-$ go get github.com/r7kamura/gospel
-$ cd ${GOPATH/:*/}/src/github.com/nobonobo/unqlitego
+$ cd ${GOPATH/:*/}/src/github.com/GJRTimmer/unqlitego
 $ go test .
 ```
 
@@ -22,16 +32,14 @@ Benchmark
 ----------
 
 ```sh
-$ go get github.com/r7kamura/gospel
-$ cd ${GOPATH/:*/}/src/github.com/nobonobo/unqlitego
+$ cd ${GOPATH/:*/}/src/github.com/GJRTimmer/unqlitego
 $ go test -bench Bench*
 ```
 
-Output:(Macbook Air 2011 mid)
-
-```
-BenchmarkFileStore	  200000	      9667 ns/op
-BenchmarkFileFetch	  500000	      7928 ns/op
-BenchmarkMemStore	  500000	      3824 ns/op
-BenchmarkMemFetch	 1000000	      3448 ns/op
+Output:(Lenovo T560 i7-6600U, 16GB Memory, Win10)
+```bash
+BenchmarkFileStore-4      500000              5946 ns/op
+BenchmarkFileFetch-4      500000              2941 ns/op
+BenchmarkMemStore-4      1000000              2695 ns/op
+BenchmarkMemFetch-4      1000000              2287 ns/op
 ```
