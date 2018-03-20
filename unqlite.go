@@ -28,6 +28,9 @@ func init() {
 		lck: new(sync.Mutex),
 	}
 
+	C.unqlite_lib_init()
+
+	// Verify if library is compiled ThreadSafe
 	if !lib.IsThreadSafe() {
 		panic("UnQLite was not compiled ThreadSafe, please include 'UNQLITE_ENABLE_THREADS' directive in compilation.")
 	}
@@ -52,8 +55,8 @@ func Info() *Library {
 // This is autocalled when a database is opened.
 func (l *Library) Init() {
 	// Initalize ThreadSafe Library Init.
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	//l.mu.Lock()
+	//defer l.mu.Unlock()
 
 	// Initalize Library Lock
 	// This lock will remain until Shutdown() is called.
@@ -61,9 +64,7 @@ func (l *Library) Init() {
 	// C.unqlite_lib_config is not ThreadSafe and is only allowed to be called
 	// when no call has yet been made to C.unqlite_lib_init().
 	// Therefor set global library lock, and release on call to Shutdown().
-	defer l.lck.Lock()
-
-	C.unqlite_lib_init()
+	//defer l.lck.Lock()
 }
 
 // IsThreadSafe returns a boolean identifiying if the UnQLite library is
