@@ -99,11 +99,9 @@ func TestModule(t *testing.T) {
 			})
 			It("Database.Cursor", func() {
 				cursor, err := db.Cursor()
-				//fmt.Println(err)
-				//Expect(err).To()
+				Expect(err).To(NotExist)
 				Expect(cursor).To(Exist)
 				err = cursor.Seek([]byte("sample"))
-				//fmt.Println(err)
 				Expect(err).To(NotExist)
 			})
 			It("Database.Close", func() {
