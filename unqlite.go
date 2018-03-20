@@ -1,40 +1,137 @@
 package unqlitego
 
-/*
-#cgo linux CFLAGS: -DUNQLITE_ENABLE_THREADS=1 -Wno-unused-but-set-variable
-#cgo darwin CFLAGS: -DUNQLITE_ENABLE_THREADS=1
-#cgo windows CFLAGS: -DUNQLITE_ENABLE_THREADS=1
-#include "./unqlite.h"
-#include "./wrappers.h"
-#include <stdlib.h>
-*/
+// #include <unqlite.h>
+// #include <wrappers.h>
+// #include <stdlib.h>
 import "C"
 
 import (
 	"fmt"
-	"runtime"
-	"unsafe"
+	"sync"
 )
 
-// UnQLiteError ... standard error for this module
+var (
+	lib *Library
+)
 
-type GlobaLError string
-
-func (s GlobaLError) Error() string {
-	return string(s)
+// init will initialize the library.
+// This is to replace to previous implementation of init for the UnQLite library.
+// In order to be fully ThreadSafe the library itself requires a global Mutex.
+//
+// Calls to 'C.unqlite_lib_init()' are ThreadSafe and any subsequents call will result in NOOP.
+// Calls to 'C.unqlite_lib_shutdown()' are NOT ThreadSafe and require a library Mutex.
+// Any subsequent calls to 'C.unqlite_lib_shutdown()' will result in NOOP.
+// Calls to 'unqlite_lib_config' are not ThreadSafe and require a library Mutex.
+func init() {
+	lib = &Library{
+		mu: new(sync.Mutex),
+	}
 }
 
+// Library represents the UnQLite Library Control.
+type Library struct {
+	// Is Initialized
+	init bool
+
+	// ThreadSafe Mutex
+	mu *sync.Mutex
+}
+
+// Info returns the UnQLite Library.
+func Info() *Library {
+	return lib
+}
+
+// IsInitialized will return boolean indicating if the library is initialized.
+func (l *Library) IsInitialized() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.init
+}
+
+// Init will initialize the library. After call init, the library must be shutdown first before any
+// re-configuration can be done. Subsequent calls result in NOOP.
+// This is autocalled when a database is opened.
+func (l *Library) Init() {
+	// Initalize ThreadSafe Library Init.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Initialize Native Library
+	C.unqlite_lib_init()
+	l.init = true
+}
+
+// IsThreadSafe returns a boolean identifiying if the UnQLite library is
+// compiled Thread Safe.
+func (l *Library) IsThreadSafe() bool {
+	if !l.IsInitialized() {
+		l.Init()
+	}
+
+	return C.unqlite_lib_is_threadsafe() == 1
+}
+
+// Version returns the version string.
+func (l *Library) Version() string {
+	return C.GoString(C.unqlite_lib_version())
+}
+
+// Signature returns the Signature string.
+func (l *Library) Signature() string {
+	return C.GoString(C.unqlite_lib_signature())
+}
+
+// Ident returns the UnQLite identification string.
+func (l *Library) Ident() string {
+	return C.GoString(C.unqlite_lib_ident())
+}
+
+// Copyright returns the Copyright string.
+func (l *Library) Copyright() string {
+	return C.GoString(C.unqlite_lib_copyright())
+}
+
+// Shutdown the UnQLite Library.
+func (l *Library) Shutdown() error {
+	// Enforce ThreadSafe operation.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	res := C.unqlite_lib_shutdown()
+	if res != C.UNQLITE_OK {
+		return UnQLiteError(res)
+	}
+	l.init = false
+
+	return nil
+}
+
+// UnQLiteError is returned on both UnQLite native errors as well as UnQLite Go errors.
+// Native errors are within the range of '<= 0' (Equal and lesser then Zero) while the
+// errors from UnQLite Go are > 0 (Greater then Zero).
+//
+// 	( UnQLiteError <= 0 ) Native Errors
+//	( UnQLiteError >  0 ) UnQLite Go Errors.
 type UnQLiteError int
 
+// Error returns the string representation of the UnQLiteError.
 func (e UnQLiteError) Error() string {
 	s := errString[e]
 	if s == "" {
-		return fmt.Sprintf("errno %d", int(e))
+		return fmt.Sprintf("err: %d", int(e))
 	}
+
 	return s
 }
 
+func (e UnQLiteError) String() string {
+	return e.Error()
+}
+
 var errString = map[UnQLiteError]string{
+	C.UNQLITE_OK:             "OK",
 	C.UNQLITE_LOCKERR:        "Locking protocol error",
 	C.UNQLITE_READ_ONLY:      "Read only Key/Value storage engine",
 	C.UNQLITE_CANTOPEN:       "Unable to open the database file",
@@ -60,520 +157,19 @@ var errString = map[UnQLiteError]string{
 	C.UNQLITE_NOMEM:          "Out of memory",
 }
 
-
-// Database ...
-type Database struct {
-	handle *C.unqlite
+// unQLiteValue represents an UnQLite Value object which is returned from the unlying UnQLite Database.
+type unQLiteValue struct {
+	// Pointer to underlying UnQLite Value.
+	v *C.unqlite_value
 }
 
-// Cursor ...
-type Cursor struct {
-	parent *Database
-	handle *C.unqlite_kv_cursor
-}
-
-type VM struct {
-	vm *C.unqlite_vm
-}
-
-type Unqlite_value struct {
-	unqlite_value *C.unqlite_value
-}
-
-func init() {
-	C.unqlite_lib_init()
-	if !IsThreadSafe() {
-		panic("unqlite library was not compiled for thread-safe option UNQLITE_ENABLE_THREADS=1")
+// Nil returns a boolean indicating if the unQLiteValue is nil.
+func (uv *unQLiteValue) Nil() bool {
+	switch uv.v {
+	case nil:
+		// User Data is wrong
+		return true
+	default:
+		return false
 	}
 }
-
-
-
-// NewDatabase ...
-func NewDatabase(filename string) (db *Database, err error) {
-	db = &Database{}
-	name := C.CString(filename)
-	defer C.free(unsafe.Pointer(name))
-	res := C.unqlite_open(&db.handle, name, C.UNQLITE_OPEN_CREATE)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	if db.handle != nil {
-		runtime.SetFinalizer(db, (*Database).Close)
-	}
-	return
-}
-
-
-
-func NewVM() (vm *VM) {
-	vm = &VM{}
-	return
-}
-
-func (db *Database,) Unqlite_compile(jx9_script string,vm *VM) (error,string ){
-	res := C.unqlite_compile(db.handle,C.CString(jx9_script),C.int(len(jx9_script)),&vm.vm)
-	if res != C.UNQLITE_OK{
-		if res == C.UNQLITE_COMPILE_ERR{
-			err:=UnQLiteError(res)
-			error_log:=new(C.char)
-			err_msg:=C.extract_unqlite_log_error(db.handle,error_log)
-			g_err_msg:=C.GoString(err_msg)
-			//C.free(unsafe.Pointer(err_msg))
-			return err,g_err_msg
-		}
-	}
-	return nil,""
-}
-
-
-
-func (vm VM) Free(){
-	C.free(unsafe.Pointer(vm.vm))
-}
-
-func (vm *VM)Unqlite_vm_extract_variable(variable_name string) (*Unqlite_value){
-	/*This function must be used with extra causion since it might return
-	a variable from the type of *C.unqlite_value ,be sure to free this pointer
-	In case of no such variable of out-of-memory issue NULL is returned
-
-	In case where the VM have not been executed the return value will be C.int(0)
-	In case of unqlite is compiled with threads support and the vm.vm instance have been releases
-	by a different thread 0 will be returned
-
-	For summary:
-	-----------
-	*) 0 or NULL = Bad
-	*) *C.unqlite_value = Good */
-	c_variable_name := C.CString(variable_name)
-	defer C.free(unsafe.Pointer(c_variable_name))
-	unqlite_value:=C.unqlite_vm_extract_variable(vm.vm,c_variable_name)
-	return &Unqlite_value{unqlite_value}
-}
-
-
-func (vm *VM)VM_extract_output() string{
-	//extract the output from a vm after execution
-	var len C.int
-	var buff *C.char
-	buff=C.extract_vm_output(vm.vm,&len)
-	q:=C.GoStringN(buff,len)
-	fmt.Printf("%s",q)
-	return ""
-}
-
-func (vm *VM)VM_exacute() int{
-	res:=C.unqlite_vm_exec(vm.vm)
-	return int(res)
-}
-
-func unqlite_value_ok(unqlite_value *Unqlite_value)(bool) {
-	switch unqlite_value.unqlite_value{
-	case nil:return false//User Data is wrtong
-	default:return true
-	}
-}
-
-func (vm *VM)Extract_variable_as_int(variable_name string) (int,error){
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
-	 */
-	var unqlite_value *Unqlite_value
-	unqlite_value=vm.Unqlite_vm_extract_variable(variable_name)
-	if ! unqlite_value_ok(unqlite_value){
-		return 0,nil
-	}
-
-	res:=int(C.unqlite_value_to_int(unqlite_value.unqlite_value))
-	return res,GlobaLError("OK")
-}
-
-func (vm *VM)Extract_variable_as_string(variable_name string) (string,error){
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
-	 */
-	var unqlite_value *Unqlite_value
-	unqlite_value=vm.Unqlite_vm_extract_variable(variable_name)
-	if ! unqlite_value_ok(unqlite_value){
-		return "",nil
-	}
-	var plen C.int
-	c_res:=C.extract_variable_as_string(unqlite_value.unqlite_value,&plen)
-	res:=C.GoStringN(c_res,plen)
-
-	return res,GlobaLError("OK")
-}
-
-func (vm *VM)Extract_variable_as_bool(variable_name string) (bool,error){
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
-	 */
-	var unqlite_value *Unqlite_value
-	unqlite_value=vm.Unqlite_vm_extract_variable(variable_name)
-	if ! unqlite_value_ok(unqlite_value){
-		return false,nil
-	}
-
-	res:=int(C.unqlite_value_to_bool(unqlite_value.unqlite_value))
-	return res!=0,GlobaLError("OK")
-}
-
-func (vm *VM)Extract_variable_as_int64(variable_name string) (int64,error){
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
-	 */
-	var unqlite_value *Unqlite_value
-	unqlite_value=vm.Unqlite_vm_extract_variable(variable_name)
-	if ! unqlite_value_ok(unqlite_value){
-		return 0,nil
-	}
-
-	res:=int64(C.unqlite_value_to_int64(unqlite_value.unqlite_value))
-	return res,GlobaLError("OK")
-}
-
-func (vm *VM)Extract_variable_as_double(variable_name string) (float64,error){
-	/*Extract a variable from the VM after if have been executed
-	If something went wrong return nil
-	 */
-	var unqlite_value *Unqlite_value
-	unqlite_value=vm.Unqlite_vm_extract_variable(variable_name)
-	if ! unqlite_value_ok(unqlite_value){
-		return 0.0,nil
-	}
-
-	res:=float64(C.unqlite_value_to_double(unqlite_value.unqlite_value))
-	return res,GlobaLError("OK")
-}
-// Close ...
-func (db *Database) Close() (err error) {
-	if db.handle != nil {
-		res := C.unqlite_close(db.handle)
-		if res != C.UNQLITE_OK {
-			err = UnQLiteError(res)
-		}
-		db.handle = nil
-	}
-	return
-}
-
-// Store ...
-func (db *Database) Store(key, value []byte) (err error) {
-	var k, v unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	if len(value) > 0 {
-		v = unsafe.Pointer(&value[0])
-	}
-
-	res := C.unqlite_kv_store(db.handle,
-		k, C.int(len(key)),
-		v, C.unqlite_int64(len(value)))
-	if res == C.UNQLITE_OK {
-		return nil
-	}
-	return UnQLiteError(res)
-}
-
-// Append ...
-func (db *Database) Append(key, value []byte) (err error) {
-	var k, v unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	if len(value) > 0 {
-		v = unsafe.Pointer(&value[0])
-	}
-
-	res := C.unqlite_kv_append(db.handle,
-		k, C.int(len(key)),
-		v, C.unqlite_int64(len(value)))
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Fetch ...
-func (db *Database) Fetch(key []byte) (value []byte, err error) {
-	var k unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	var n C.unqlite_int64
-	res := C.unqlite_kv_fetch(db.handle, k, C.int(len(key)), nil, &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-		return
-	}
-	value = make([]byte, int(n))
-	res = C.unqlite_kv_fetch(db.handle, k, C.int(len(key)), unsafe.Pointer(&value[0]), &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Delete ...
-func (db *Database) Delete(key []byte) (err error) {
-	var k unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	res := C.unqlite_kv_delete(db.handle, k, C.int(len(key)))
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Begin ...
-func (db *Database) Begin() (err error) {
-	res := C.unqlite_begin(db.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Commit ...
-func (db *Database) Commit() (err error) {
-	res := C.unqlite_commit(db.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Rollback ...
-func (db *Database) Rollback() (err error) {
-	res := C.unqlite_rollback(db.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// NewCursor ...
-func (db *Database) NewCursor() (cursor *Cursor, err error) {
-	cursor = &Cursor{parent: db}
-	res := C.unqlite_kv_cursor_init(db.handle, &cursor.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	runtime.SetFinalizer(cursor, (*Cursor).Close)
-	return
-}
-
-// Close ...
-func (curs *Cursor) Close() (err error) {
-	if curs.parent.handle != nil && curs.handle != nil {
-		res := C.unqlite_kv_cursor_release(curs.parent.handle, curs.handle)
-		if res != C.UNQLITE_OK {
-			err = UnQLiteError(res)
-		}
-		curs.handle = nil
-	}
-	return
-}
-
-// Seek ...
-func (curs *Cursor) Seek(key []byte) (err error) {
-	var k unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	res := C.unqlite_kv_cursor_seek(curs.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_EXACT)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// SeekLE ...
-func (curs *Cursor) SeekLE(key []byte) (err error) {
-	var k unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	res := C.unqlite_kv_cursor_seek(curs.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_LE)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// SeekGE ...
-func (curs *Cursor) SeekGE(key []byte) (err error) {
-	var k unsafe.Pointer
-
-	if len(key) > 0 {
-		k = unsafe.Pointer(&key[0])
-	}
-
-	res := C.unqlite_kv_cursor_seek(curs.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_GE)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// First ...
-func (curs *Cursor) First() (err error) {
-	res := C.unqlite_kv_cursor_first_entry(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Last ...
-func (curs *Cursor) Last() (err error) {
-	res := C.unqlite_kv_cursor_last_entry(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// IsValid ...
-func (curs *Cursor) IsValid() (ok bool) {
-	return C.unqlite_kv_cursor_valid_entry(curs.handle) == 1
-}
-
-// Next ...
-func (curs *Cursor) Next() (err error) {
-	res := C.unqlite_kv_cursor_next_entry(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Prev ...
-func (curs *Cursor) Prev() (err error) {
-	res := C.unqlite_kv_cursor_prev_entry(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Delete ...
-func (curs *Cursor) Delete() (err error) {
-	res := C.unqlite_kv_cursor_delete_entry(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Reset ...
-func (curs *Cursor) Reset() (err error) {
-	res := C.unqlite_kv_cursor_reset(curs.handle)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Key ...
-func (curs *Cursor) Key() (key []byte, err error) {
-	var n C.int
-	res := C.unqlite_kv_cursor_key(curs.handle, nil, &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-		return
-	}
-	key = make([]byte, int(n))
-	res = C.unqlite_kv_cursor_key(curs.handle, unsafe.Pointer(&key[0]), &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Value ...
-func (curs *Cursor) Value() (value []byte, err error) {
-	var n C.unqlite_int64
-	res := C.unqlite_kv_cursor_data(curs.handle, nil, &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-		return
-	}
-	value = make([]byte, int(n))
-	res = C.unqlite_kv_cursor_data(curs.handle, unsafe.Pointer(&value[0]), &n)
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// Shutdown ...
-func Shutdown() (err error) {
-	res := C.unqlite_lib_shutdown()
-	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-	}
-	return
-}
-
-// IsThreadSafe ...
-func IsThreadSafe() bool {
-	return C.unqlite_lib_is_threadsafe() == 1
-}
-
-// Version ...
-func Version() string {
-	return C.GoString(C.unqlite_lib_version())
-}
-
-// Signature ...
-func Signature() string {
-	return C.GoString(C.unqlite_lib_signature())
-}
-
-// Ident ...
-func Ident() string {
-	return C.GoString(C.unqlite_lib_ident())
-}
-
-// Copyright ...
-func Copyright() string {
-	return C.GoString(C.unqlite_lib_copyright())
-}
-
-/* TODO: implement
-
-// Database Engine Handle
-int unqlite_config(unqlite *pDb,int nOp,...);
-
-// Key/Value (KV) Store Interfaces
-int unqlite_kv_fetch_callback(unqlite *pDb,const void *pKey,
-	                    int nKeyLen,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-int unqlite_kv_config(unqlite *pDb,int iOp,...);
-
-//  Cursor Iterator Interfaces
-int unqlite_kv_cursor_key_callback(unqlite_kv_cursor *pCursor,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-int unqlite_kv_cursor_data_callback(unqlite_kv_cursor *pCursor,int (*xConsumer)(const void *,unsigned int,void *),void *pUserData);
-
-// Utility interfaces
-int unqlite_util_load_mmaped_file(const char *zFile,void **ppMap,unqlite_int64 *pFileSize);
-int unqlite_util_release_mmaped_file(void *pMap,unqlite_int64 iFileSize);
-
-// Global Library Management Interfaces
-int unqlite_lib_config(int nConfigOp,...);
-*/
