@@ -64,11 +64,11 @@ func (script *JX9_script) CreateOpenDataBase(database_name, pointer_name string)
 		2.string:If a compilation failed the error log will be returned, if compilation suceeded this should be ingnored
 		3.unqlitego.VM:The VM on which this code was compiled at (if compilation suceeded)
 */
-func (script *JX9_script) Compile(database ugo.Database) (error, string, ugo.VM) {
+func (script *JX9_script) Compile(database ugo.Database) (string, ugo.VM, error) {
 	vm := ugo.NewVM()
-	err, out := database.Unqlite_compile(script.GetScript(), vm)
-	return err, out, *vm
+	out, err := database.Compile(script.GetScript(), vm)
 
+	return out, *vm, err
 }
 
 /*	Complie the JX9 script code and execute it
@@ -80,10 +80,10 @@ func (script *JX9_script) Compile(database ugo.Database) (error, string, ugo.VM)
 		3.string:if copliation ended successfully the output of the script is returned
 		4.unqlitego.VM:The instance of the vm used to execute the script is returned
 */
-func (script JX9_script) CompileAndExecute(database ugo.Database) (error, string, string, ugo.VM) {
-	err, out, vm := script.Compile(database)
-	vm.VM_execute()
-	return err, out, vm.VM_extract_output(), vm
+func (script JX9_script) CompileAndExecute(database ugo.Database) (string, string, ugo.VM, error) {
+	out, vm, err := script.Compile(database)
+	vm.Execute()
+	return out, vm.Result(), vm, err
 }
 
 /*	This will add a JX9 snippet script to the current script which stores a JSON/JSON list to a database.

@@ -24,25 +24,17 @@ var (
 // Calls to 'unqlite_lib_config' are not ThreadSafe and require a library Mutex.
 func init() {
 	lib = &Library{
-		mu:  new(sync.Mutex),
-		lck: new(sync.Mutex),
-	}
-
-	C.unqlite_lib_init()
-
-	// Verify if library is compiled ThreadSafe
-	if !lib.IsThreadSafe() {
-		panic("UnQLite was not compiled ThreadSafe, please include 'UNQLITE_ENABLE_THREADS' directive in compilation.")
+		mu: new(sync.Mutex),
 	}
 }
 
 // Library represents the UnQLite Library Control.
 type Library struct {
+	// Is Initialized
+	init bool
+
 	// ThreadSafe Mutex
 	mu *sync.Mutex
-
-	// Library Lock
-	lck *sync.Mutex
 }
 
 // Info returns the UnQLite Library.
@@ -50,26 +42,34 @@ func Info() *Library {
 	return lib
 }
 
+// IsInitialized will return boolean indicating if the library is initialized.
+func (l *Library) IsInitialized() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.init
+}
+
 // Init will initialize the library. After call init, the library must be shutdown first before any
 // re-configuration can be done. Subsequent calls result in NOOP.
 // This is autocalled when a database is opened.
 func (l *Library) Init() {
 	// Initalize ThreadSafe Library Init.
-	//l.mu.Lock()
-	//defer l.mu.Unlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-	// Initalize Library Lock
-	// This lock will remain until Shutdown() is called.
-	// Library lock is required for calls to C.unqlite_lib_config.
-	// C.unqlite_lib_config is not ThreadSafe and is only allowed to be called
-	// when no call has yet been made to C.unqlite_lib_init().
-	// Therefor set global library lock, and release on call to Shutdown().
-	//defer l.lck.Lock()
+	// Initialize Native Library
+	C.unqlite_lib_init()
+	l.init = true
 }
 
 // IsThreadSafe returns a boolean identifiying if the UnQLite library is
 // compiled Thread Safe.
 func (l *Library) IsThreadSafe() bool {
+	if !l.IsInitialized() {
+		l.Init()
+	}
+
 	return C.unqlite_lib_is_threadsafe() == 1
 }
 
@@ -95,21 +95,17 @@ func (l *Library) Copyright() string {
 
 // Shutdown the UnQLite Library.
 func (l *Library) Shutdown() error {
-	var err error
-
 	// Enforce ThreadSafe operation.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Release Library lock
-	defer l.lck.Unlock()
-
 	res := C.unqlite_lib_shutdown()
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
+	l.init = false
 
-	return err
+	return nil
 }
 
 // UnQLiteError is returned on both UnQLite native errors as well as UnQLite Go errors.

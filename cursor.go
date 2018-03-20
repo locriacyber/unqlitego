@@ -21,37 +21,32 @@ type Cursor struct {
 
 // Cursor creates and initializes a new UnQLite database cursor.
 func (db *Database) Cursor() (*Cursor, error) {
-	var err error
-
 	c := &Cursor{db: db}
 	res := C.unqlite_kv_cursor_init(db.conn, &c.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return nil, UnQLiteError(res)
 	}
 	runtime.SetFinalizer(c, (*Cursor).Close)
 
-	return nil, err
+	return c, nil
 }
 
 // Close closes the open cursor.
 func (cr *Cursor) Close() error {
-	var err error
-
 	if cr.db.conn != nil && cr.handle != nil {
 		res := C.unqlite_kv_cursor_release(cr.db.conn, cr.handle)
 		if res != C.UNQLITE_OK {
-			err = UnQLiteError(res)
+			return UnQLiteError(res)
 		}
 		cr.handle = nil
 	}
 
-	return err
+	return nil
 }
 
 // Seek will search the cursor for an exact match. If the record exists the cursor is left pointing to it.
 // Otherwise it is left pointing to EOF and UNQLITE_NOTFOUND is returned.
 func (cr *Cursor) Seek(key []byte) error {
-	var err error
 	var k unsafe.Pointer
 
 	if len(key) > 0 {
@@ -60,10 +55,10 @@ func (cr *Cursor) Seek(key []byte) error {
 
 	res := C.unqlite_kv_cursor_seek(cr.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_EXACT)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // SeekLE will search the cursor and left pointing to the largest key in the database that is smaller than (pKey/nKey).
@@ -71,7 +66,6 @@ func (cr *Cursor) Seek(key []byte) error {
 // This option have sense only if the underlying key/value storage subsystem support range search (i.e: B+Tree, R+Tree, etc.).
 // Otherwise this option is ignored and an exact match is performed.
 func (cr *Cursor) SeekLE(key []byte) error {
-	var err error
 	var k unsafe.Pointer
 
 	if len(key) > 0 {
@@ -80,10 +74,10 @@ func (cr *Cursor) SeekLE(key []byte) error {
 
 	res := C.unqlite_kv_cursor_seek(cr.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_LE)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // SeekGE will search the cursor and left pointing to the smallest key in the database that is larger than (pKey/nKey).
@@ -91,7 +85,6 @@ func (cr *Cursor) SeekLE(key []byte) error {
 // This option have sense only if the underlying key/value storage subsystem support range search (i.e: B+Tree, R+Tree, etc.).
 // Otherwise this option is ignored and an exact match is performed.
 func (cr *Cursor) SeekGE(key []byte) error {
-	var err error
 	var k unsafe.Pointer
 
 	if len(key) > 0 {
@@ -100,34 +93,30 @@ func (cr *Cursor) SeekGE(key []byte) error {
 
 	res := C.unqlite_kv_cursor_seek(cr.handle, k, C.int(len(key)), C.UNQLITE_CURSOR_MATCH_GE)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // First returns the first entry of the cursor.
 func (cr *Cursor) First() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_first_entry(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // Last returns the last entry of the cursor.
 func (cr *Cursor) Last() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_last_entry(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // IsValid returns a boolean indicating if the cursor is valid.
@@ -137,50 +126,42 @@ func (cr *Cursor) IsValid() bool {
 
 // Next moves the cursor to the next entry.
 func (cr *Cursor) Next() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_next_entry(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // Prev moves the cursor the the previous entry.
 func (cr *Cursor) Prev() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_prev_entry(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // Delete current cursor entry.
 func (cr *Cursor) Delete() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_delete_entry(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // Reset the cursor.
 func (cr *Cursor) Reset() error {
-	var err error
-
 	res := C.unqlite_kv_cursor_reset(cr.handle)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return UnQLiteError(res)
 	}
 
-	return err
+	return nil
 }
 
 // Key returns the key at the current cursor location.
@@ -189,14 +170,13 @@ func (cr *Cursor) Key() (key []byte, err error) {
 
 	res := C.unqlite_kv_cursor_key(cr.handle, nil, &n)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-		return
+		return nil, UnQLiteError(res)
 	}
 
 	key = make([]byte, int(n))
 	res = C.unqlite_kv_cursor_key(cr.handle, unsafe.Pointer(&key[0]), &n)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return nil, UnQLiteError(res)
 	}
 
 	return
@@ -208,14 +188,13 @@ func (cr *Cursor) Value() (value []byte, err error) {
 
 	res := C.unqlite_kv_cursor_data(cr.handle, nil, &n)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
-		return
+		return nil, UnQLiteError(res)
 	}
 
 	value = make([]byte, int(n))
 	res = C.unqlite_kv_cursor_data(cr.handle, unsafe.Pointer(&value[0]), &n)
 	if res != C.UNQLITE_OK {
-		err = UnQLiteError(res)
+		return nil, UnQLiteError(res)
 	}
 
 	return

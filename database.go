@@ -17,15 +17,15 @@ type Database struct {
 
 // NewDatabase creates and initalizes a new UnQLite database connection.
 func NewDatabase(filename string) (db *Database, err error) {
-	// TODO: Enforce call to check library lock and call forced call to init.
 	db = &Database{}
 
 	name := C.CString(filename)
 	defer C.free(unsafe.Pointer(name))
 
-	// Call Library Init
-	// This will lock the library against modifications.
-	Info().Init()
+	// Initialize Native Library
+	if !Info().IsInitialized() {
+		Info().Init()
+	}
 
 	res := C.unqlite_open(&db.conn, name, C.UNQLITE_OPEN_CREATE)
 	if res != C.UNQLITE_OK {

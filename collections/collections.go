@@ -87,7 +87,7 @@ func (collection *UnqliteCollection) Commit() error {
 	if collection._commited {
 		return UnqliteCollectionError("This collection data is marked as commited")
 	}
-	err, res, out, vm := collection.script.CompileAndExecute(*collection.database)
+	res, out, vm, err := collection.script.CompileAndExecute(*collection.database)
 	collection._commited = true
 	collection._last_vm = &vm
 	collection._last_output = out
@@ -104,15 +104,15 @@ func (collection *UnqliteCollection) getVariableFromLastExecution(variable_name,
 		var err error
 		switch variable_type {
 		case "int":
-			res, err = collection._last_vm.Extract_variable_as_int(variable_name)
+			res, err = collection._last_vm.ExtractInt(variable_name)
 		case "int64":
-			res, err = collection._last_vm.Extract_variable_as_int64(variable_name)
+			res, err = collection._last_vm.ExtractInt64(variable_name)
 		case "string":
-			res, err = collection._last_vm.Extract_variable_as_string(variable_name)
+			res, err = collection._last_vm.ExtractString(variable_name)
 		case "bool":
-			res, err = collection._last_vm.Extract_variable_as_bool(variable_name)
+			res, err = collection._last_vm.ExtractBool(variable_name)
 		case "double":
-			res, err = collection._last_vm.Extract_variable_as_double(variable_name)
+			res, err = collection._last_vm.ExtractFloat64(variable_name)
 		default:
 			return nil
 		}
