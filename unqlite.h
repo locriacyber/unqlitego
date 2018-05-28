@@ -42,7 +42,7 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- /* $SymiscID: unqlite.h v1.2 Win10 2108-01-21 23:59:12 stable <chm@symisc.net>  $ */
+ /* $SymiscID: unqlite.h v1.3 Win10 2108-04-27 02:35:11 stable <chm@symisc.net>  $ */
 #include <stdarg.h> /* needed for the definition of va_list */
 /*
  * Compile time engine version, signature, identification in the symisc source tree
@@ -64,7 +64,7 @@
  * with the value (X*1000000 + Y*1000 + Z) where X, Y, and Z are the same
  * numbers used in [UNQLITE_VERSION].
  */
-#define UNQLITE_VERSION_NUMBER 1001008
+#define UNQLITE_VERSION_NUMBER 1001009
 /*
  * The UNQLITE_SIG C preprocessor macro evaluates to a string
  * literal which is the public signature of the unqlite engine.
